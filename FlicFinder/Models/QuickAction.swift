@@ -39,7 +39,7 @@ enum QuickAction: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .blurry: return "camera.metering.none"
-        case .screenshots: return "rectangle.on.rectangle"
+        case .screenshots: return "rectangle.on.rectangle.fill"
         case .duplicates: return "square.on.square"
         case .oldPhotos: return "calendar.badge.clock"
         }
