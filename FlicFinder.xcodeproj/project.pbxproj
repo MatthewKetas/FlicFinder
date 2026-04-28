@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0BE43B5E2F7F10F300849FF1 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 0BE43B5D2F7F10F300849FF1 /* README.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		0BCD83092F7EFB2B0096CEE6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		0BCD82FB2F7EFB2A0096CEE6 /* FlicFinder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlicFinder.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0BCD83082F7EFB2B0096CEE6 /* FlicFinderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlicFinderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0BCD83122F7EFB2B0096CEE6 /* FlicFinderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlicFinderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0BE43B5D2F7F10F300849FF1 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +84,7 @@
 				0BCD830B2F7EFB2B0096CEE6 /* FlicFinderTests */,
 				0BCD83152F7EFB2B0096CEE6 /* FlicFinderUITests */,
 				0BCD82FC2F7EFB2A0096CEE6 /* Products */,
+				0BE43B5D2F7F10F300849FF1 /* README.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -212,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0BE43B5E2F7F10F300849FF1 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
