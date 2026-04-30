@@ -88,7 +88,7 @@ struct ReviewView: View {
         guard let summary = await viewModel.confirmDeletion() else { return }
         homeViewModel.recordDeletion(
             freedBytes: summary.bytesFreed,
-            photoCount: summary.photoCount
+            deletedPhotoIDs: summary.deletedPhotoIDs
         )
         dismiss()
     }

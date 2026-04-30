@@ -1,16 +1,22 @@
 // Created by: Matthew Ketas
-// Last Edited: 4/2/2026
-// LLMs Used: Claude Opus 4.6 Extended
+// Last Edited: 4/28/2026
+// LLMs Used: Claude Opus 4.7
 
 // Home screen — observes HomeViewModel.
-// All other types (QuickAction, QuickActionCard, StatItem, SmartSearchView) live in their own files. Do NOT redeclare them here.
 
 import SwiftUI
+import PhotosUI
+import Photos
 
 struct ContentView: View {
     @State private var viewModel = HomeViewModel()
     @State private var showSmartSearch = false
     @State private var selectedQuickAction: QuickAction? = nil
+
+    // Photo picker state
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showingPickerFromHome = false
+    @State private var showPickerInfo = false
 
     private let accentPurple = Color(red: 0.45, green: 0.31, blue: 0.85)
 
@@ -36,6 +42,40 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showSmartSearch) {
                 SmartSearchView(homeViewModel: viewModel)
+            }
+            .photosPicker(
+                isPresented: $showingPickerFromHome,
+                selection: $pickerItems,
+                maxSelectionCount: 0,    // 0 = unlimited
+                matching: .images,
+                photoLibrary: .shared()
+            )
+            .onChange(of: pickerItems) { _, newItems in
+                Task {
+                    await viewModel.updateSelection(fromPickerItems: newItems)
+                }
+            }
+            .alert("Choose your photos", isPresented: $showPickerInfo) {
+                Button("Got it") {
+                    showingPickerFromHome = true
+                }
+            } message: {
+                Text("Pick the photos you'd like the AI smart search to analyze. Tap the photo count again any time to change your selection.")
+            }
+            .alert(
+                "Photo selection failed",
+                isPresented: Binding(
+                    get: { viewModel.selectionErrorMessage != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            viewModel.selectionErrorMessage = nil
+                        }
+                    }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.selectionErrorMessage ?? "")
             }
             .alert("Photo access required", isPresented: $viewModel.permissionDenied) {
                 Button("Open Settings") {
@@ -71,16 +111,29 @@ struct ContentView: View {
 
     private var statsSection: some View {
         HStack(spacing: 0) {
-            StatItem(
-                value: "\(viewModel.totalPhotos)",
-                label: "Photos",
-                icon: "photo.fill"
-            )
+            // Photos stat is a button that opens the picker
+            Button {
+                if viewModel.hasSelection {
+                    showingPickerFromHome = true   // skip info dialog if already used
+                } else {
+                    showPickerInfo = true
+                }
+            } label: {
+                StatItem(
+                    value: viewModel.photoStatValue,
+                    label: viewModel.photoStatLabel,
+                    icon: viewModel.hasSelection
+                        ? "checkmark.circle.fill"
+                        : "photo.fill"
+                )
+            }
+            .buttonStyle(.plain)
+
             Divider().frame(height: 32)
             StatItem(
                 value: "\(viewModel.photosCleaned)",
                 label: "Cleaned",
-                icon: "checkmark.circle.fill"
+                icon: "checkmark.seal.fill"
             )
             Divider().frame(height: 32)
             StatItem(
@@ -139,9 +192,15 @@ struct ContentView: View {
                         Text("Describe what to delete")
                             .font(.headline)
                             .foregroundStyle(.primary)
-                        Text("Use AI to find photos by your description")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if viewModel.hasSelection {
+                            Text("Within \(viewModel.selectedPhotos.count) selected photos")
+                                .font(.caption)
+                                .foregroundStyle(.purple)
+                        } else {
+                            Text("Use AI to find photos by your description")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Spacer()

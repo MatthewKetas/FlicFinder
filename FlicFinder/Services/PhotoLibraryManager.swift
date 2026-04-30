@@ -44,18 +44,23 @@ final class PhotoLibraryManager {
         var assets: [PhotoAsset] = []
 
         result.enumerateObjects { asset, _, _ in
-            let size = self.fileSize(for: asset)
-            assets.append(
-                PhotoAsset(
-                    id: asset.localIdentifier,
-                    phAsset: asset,
-                    creationDate: asset.creationDate,
-                    fileSize: size
-                )
-            )
+            assets.append(self.photoAsset(from: asset))
         }
 
         return assets
+    }
+
+    func fetchPhotos(withLocalIdentifiers identifiers: [String]) async -> [PhotoAsset] {
+        guard !identifiers.isEmpty else { return [] }
+
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        var assetsByID: [String: PhotoAsset] = [:]
+
+        result.enumerateObjects { asset, _, _ in
+            assetsByID[asset.localIdentifier] = self.photoAsset(from: asset)
+        }
+
+        return identifiers.compactMap { assetsByID[$0] }
     }
 
     // MARK: - Thumbnail Loading
@@ -119,5 +124,14 @@ final class PhotoLibraryManager {
             let size = resource.value(forKey: "fileSize") as? Int64 ?? 0
             return total + size
         }
+    }
+
+    private func photoAsset(from asset: PHAsset) -> PhotoAsset {
+        PhotoAsset(
+            id: asset.localIdentifier,
+            phAsset: asset,
+            creationDate: asset.creationDate,
+            fileSize: fileSize(for: asset)
+        )
     }
 }
