@@ -21,7 +21,7 @@ final class VisionAnalyzer {
     // These are the knobs you'll adjust based on testing with your own photos.
 
     /// Blur scores below this are considered blurry. Higher = stricter (fewer flags).
-    private let blurThreshold: Double = 150.0
+    private let blurThreshold: Double = 200.0
 
     /// Confidence required to flag a screenshot. 0.0–1.0.
     private let screenshotConfidenceThreshold: Float = 0.7
@@ -219,7 +219,7 @@ final class VisionAnalyzer {
         let r = Double(pixel[0])
         let g = Double(pixel[1])
         let b = Double(pixel[2])
-        return (r + g + b) / 3.0 * 10.0  // scale up so threshold ~150 makes sense
+        return (r + g + b) / 3.0 * 10.0  // scale up so threshold ~200 makes sense
     }
 
     // MARK: - Private: Screenshot Classification

@@ -85,7 +85,7 @@ struct ContentView: View {
             Divider().frame(height: 32)
             StatItem(
                 value: viewModel.formattedSpaceSaved,
-                label: "Saved",
+                label: "Space Saved",
                 icon: "externaldrive.fill"
             )
         }
