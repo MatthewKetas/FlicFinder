@@ -49,7 +49,10 @@ struct ScanView: View {
                 }
             }
             .task {
-                await viewModel.runQuickAction(action)
+                await viewModel.runQuickAction(
+                    action,
+                    selectedPhotos: homeViewModel.selectedPhotos
+                )
             }
         }
     }

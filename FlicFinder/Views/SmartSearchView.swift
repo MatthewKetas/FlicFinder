@@ -2,18 +2,17 @@
 //  SmartSearchView.swift
 //  FlicFinder
 //
-//  Created by Matthew Ketas on 4/27/26.
-//
-
-// AI-powered search sheet
-
 
 import SwiftUI
+import PhotosUI
+import Photos
 
 struct SmartSearchView: View {
     let homeViewModel: HomeViewModel
 
     @State private var viewModel = SmartSearchViewModel()
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showReducePicker = false
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isInputFocused: Bool
 
@@ -39,6 +38,12 @@ struct SmartSearchView: View {
                 } else {
                     examplesSection
                     Spacer()
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal)
+                    }
                     inputBar
                 }
             }
@@ -52,6 +57,41 @@ struct SmartSearchView: View {
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     isInputFocused = true
+                }
+            }
+            .alert(
+                "Choose fewer photos",
+                isPresented: Binding(
+                    get: { viewModel.photoLimitPromptMessage != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            viewModel.photoLimitPromptMessage = nil
+                        }
+                    }
+                )
+            ) {
+                Button("Select Photos") {
+                    viewModel.photoLimitPromptMessage = nil
+                    showReducePicker = true
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(viewModel.photoLimitPromptMessage ?? "")
+            }
+            .photosPicker(
+                isPresented: $showReducePicker,
+                selection: $pickerItems,
+                maxSelectionCount: smartSearchPhotoSelectionLimit,
+                matching: .images,
+                photoLibrary: .shared()
+            )
+            .onChange(of: pickerItems) { _, newItems in
+                Task {
+                    let photos = await homeViewModel.updateSelection(
+                        fromPickerItems: newItems
+                    )
+                    // Auto-retry the search with the reduced selection
+                    await viewModel.submit(selectedPhotos: photos)
                 }
             }
         }
@@ -94,11 +134,21 @@ struct SmartSearchView: View {
             TextField("Describe photos to find...", text: $viewModel.prompt)
                 .focused($isInputFocused)
                 .submitLabel(.search)
-                .onSubmit { Task { await viewModel.submit() } }
+                .onSubmit {
+                    Task {
+                        await viewModel.submit(
+                            selectedPhotos: homeViewModel.selectedPhotos
+                        )
+                    }
+                }
 
             if !viewModel.prompt.isEmpty {
                 Button {
-                    Task { await viewModel.submit() }
+                    Task {
+                        await viewModel.submit(
+                            selectedPhotos: homeViewModel.selectedPhotos
+                        )
+                    }
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)

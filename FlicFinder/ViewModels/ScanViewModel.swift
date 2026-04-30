@@ -27,16 +27,21 @@ final class ScanViewModel {
 
     // MARK: - Action
 
-    func runQuickAction(_ action: QuickAction) async {
+    func runQuickAction(_ action: QuickAction, selectedPhotos: [PhotoAsset]) async {
         isScanning = true
         progress = 0
         errorMessage = nil
         defer { isScanning = false }
 
-        let allPhotos = await library.fetchAllPhotos()
+        let photosToAnalyze: [PhotoAsset]
+        if selectedPhotos.isEmpty {
+            photosToAnalyze = await library.fetchAllPhotos()
+        } else {
+            photosToAnalyze = selectedPhotos
+        }
         progress = 0.2
 
-        let scanResults = await vision.analyze(photos: allPhotos, action: action)
+        let scanResults = await vision.analyze(photos: photosToAnalyze, action: action)
         progress = 1.0
         results = scanResults
     }

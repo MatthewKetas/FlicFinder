@@ -66,18 +66,21 @@ final class ReviewViewModel {
 
     // MARK: - Deletion
 
-    /// Returns the bytes freed and photo count so the caller can update HomeViewModel.
-    func confirmDeletion() async -> (bytesFreed: Int64, photoCount: Int)? {
+    /// Returns the bytes freed and deleted IDs so the caller can update HomeViewModel.
+    func confirmDeletion() async -> (bytesFreed: Int64, deletedPhotoIDs: Set<String>)? {
         let toDelete = selectedResults.map { $0.photo }
         guard !toDelete.isEmpty else { return nil }
 
         isDeleting = true
         defer { isDeleting = false }
 
+        let bytesFreed = totalSelectedSize
+        let deletedPhotoIDs = Set(toDelete.map(\.id))
+
         do {
             try await library.deletePhotos(toDelete)
             didCompleteDeletion = true
-            return (totalSelectedSize, toDelete.count)
+            return (bytesFreed, deletedPhotoIDs)
         } catch {
             deletionError = error.localizedDescription
             return nil

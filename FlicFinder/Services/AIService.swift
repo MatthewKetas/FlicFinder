@@ -11,17 +11,42 @@ final class AIService {
     private init() {}
 
     // MARK: - Configuration
-    // For demo: hardcoded here. For real apps: load from Keychain or
-    // a config file in .gitignore. NEVER commit your real key to GitHub.
-
-    private let apiKey: String = "YOUR_ANTHROPIC_API_KEY_HERE"
-    private let model: String = "claude-opus-4-7"
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    private let defaultModel = "claude-sonnet-4-6"
+    private let fallbackModels = [
+        "claude-opus-4-7",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-5-20250929",
+        "claude-opus-4-5-20251101"
+    ]
 
-    // Tunables
+    // MARK: - Tunables
+
     private let confidenceThreshold: Double = 0.7
     private let imagesPerBatch: Int = 5
     private let analysisImageSize = CGSize(width: 512, height: 512)
+
+    private var apiKey: String {
+        Secrets.anthropicAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasConfiguredAPIKey: Bool {
+        !apiKey.isEmpty && apiKey != "YOUR_ANTHROPIC_API_KEY_HERE"
+    }
+
+    private var preferredModel: String {
+        Secrets.anthropicModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var candidateModels: [String] {
+        var models = [preferredModel.isEmpty ? defaultModel : preferredModel]
+        models.append(contentsOf: fallbackModels)
+        return models.reduce(into: []) { uniqueModels, model in
+            if !uniqueModels.contains(model) {
+                uniqueModels.append(model)
+            }
+        }
+    }
 
     // MARK: - Public API
 
@@ -31,6 +56,9 @@ final class AIService {
         _ photos: [PhotoAsset],
         prompt userPrompt: String
     ) async throws -> [ScanResult] {
+        guard hasConfiguredAPIKey else {
+            throw AIServiceError.missingAPIKey
+        }
 
         var allResults: [ScanResult] = []
 
@@ -45,6 +73,36 @@ final class AIService {
         }
 
         return allResults
+    }
+
+    func validateClaudeConnection() async throws -> AIServiceConnectionCheckResult {
+        guard hasConfiguredAPIKey else {
+            throw AIServiceError.missingAPIKey
+        }
+
+        var lastError: AIServiceError?
+
+        for model in candidateModels {
+            let requestBody = buildConnectionCheckRequestBody(model: model)
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+
+            do {
+                let data = try await sendRequest(jsonData: jsonData)
+                let response = try JSONDecoder().decode(AnthropicMessageResponse.self, from: data)
+                return AIServiceConnectionCheckResult(
+                    model: model,
+                    responseID: response.id
+                )
+            } catch let error as AIServiceError {
+                lastError = error
+                if case .modelUnavailable = error {
+                    continue
+                }
+                throw error
+            }
+        }
+
+        throw lastError ?? AIServiceError.invalidResponse
     }
 
     // MARK: - Single Batch
@@ -68,10 +126,32 @@ final class AIService {
         }
 
         // 2. Build the request body
-        let requestBody = buildRequestBody(prompt: userPrompt, imagesBase64: imageData)
-        let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+        var lastError: AIServiceError?
 
-        // 3. Make the API call
+        for model in candidateModels {
+            let requestBody = buildRequestBody(
+                prompt: userPrompt,
+                imagesBase64: imageData,
+                model: model
+            )
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+
+            do {
+                let data = try await sendRequest(jsonData: jsonData)
+                return try parseResponse(data: data, photos: photos)
+            } catch let error as AIServiceError {
+                lastError = error
+                if case .modelUnavailable = error {
+                    continue
+                }
+                throw error
+            }
+        }
+
+        throw lastError ?? AIServiceError.invalidResponse
+    }
+
+    private func sendRequest(jsonData: Data) async throws -> Data {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -86,28 +166,35 @@ final class AIService {
         }
 
         guard httpResponse.statusCode == 200 else {
-            let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
-            throw AIServiceError.apiError("HTTP \(httpResponse.statusCode): \(errorBody)")
+            throw mapAPIError(statusCode: httpResponse.statusCode, data: data)
         }
 
-        // 4. Parse the response into ScanResults
-        return try parseResponse(data: data, photos: photos)
+        return data
     }
 
     // MARK: - Request Construction
 
-    private func buildRequestBody(prompt: String, imagesBase64: [String]) -> [String: Any] {
+    private func buildConnectionCheckRequestBody(model: String) -> [String: Any] {
+        [
+            "model": model,
+            "max_tokens": 8,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": "Reply with OK."
+                ]
+            ]
+        ]
+    }
 
-        // Build interleaved text + image content blocks
+    private func buildRequestBody(
+        prompt: String,
+        imagesBase64: [String],
+        model: String
+    ) -> [String: Any] {
+
         var content: [[String: Any]] = []
 
-        // Lead with the user's request
-        content.append([
-            "type": "text",
-            "text": "The user wants to find photos matching this description: \"\(prompt)\". Below are \(imagesBase64.count) images, numbered 0 through \(imagesBase64.count - 1). Evaluate each one."
-        ])
-
-        // Add each image followed by its index label
         for (index, base64) in imagesBase64.enumerated() {
             content.append([
                 "type": "image",
@@ -119,51 +206,105 @@ final class AIService {
             ])
             content.append([
                 "type": "text",
-                "text": "↑ Image \(index)"
+                "text": "Image index: \(index)"
             ])
         }
 
+        content.append([
+            "type": "text",
+            "text": userPrompt(for: prompt, imageCount: imagesBase64.count)
+        ])
+
         return [
             "model": model,
-            "max_tokens": 2048,
+            "max_tokens": 1024,
             "system": systemPrompt,
+            "tools": [photoVerdictTool],
+            "tool_choice": [
+                "type": "tool",
+                "name": "record_photo_matches"
+            ],
             "messages": [
                 [
                     "role": "user",
                     "content": content
-                ],
-                // Pre-fill assistant response with "[" so Claude continues a JSON array
-                [
-                    "role": "assistant",
-                    "content": "["
                 ]
             ]
         ]
     }
 
+    private func userPrompt(for prompt: String, imageCount: Int) -> String {
+        """
+        The user wants to find photos matching this cleanup description:
+        "\(prompt)"
+
+        Evaluate each image index from 0 through \(imageCount - 1). For each image,
+        decide whether it clearly matches the user's description. Use the
+        record_photo_matches tool with exactly one verdict per image index.
+        """
+    }
+
+    private var photoVerdictTool: [String: Any] {
+        [
+            "name": "record_photo_matches",
+            "description": """
+            Records structured photo-search verdicts for FlicFinder. Use this tool
+            after reviewing every provided image. Return exactly one verdict for
+            every image index supplied by the user. Mark matches true only when the
+            image clearly satisfies the user's cleanup description.
+            """,
+            "input_schema": [
+                "type": "object",
+                "properties": [
+                    "verdicts": [
+                        "type": "array",
+                        "description": "One verdict for each image, in image-index order.",
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "index": [
+                                    "type": "integer",
+                                    "description": "The zero-based image index."
+                                ],
+                                "matches": [
+                                    "type": "boolean",
+                                    "description": "True only when the image clearly matches the user's description."
+                                ],
+                                "confidence": [
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                    "description": "Confidence from 0.0 to 1.0."
+                                ],
+                                "reason": [
+                                    "type": "string",
+                                    "maxLength": 80,
+                                    "description": "Short user-facing reason for the verdict."
+                                ]
+                            ],
+                            "required": ["index", "matches", "confidence", "reason"],
+                            "additionalProperties": false
+                        ]
+                    ]
+                ],
+                "required": ["verdicts"],
+                "additionalProperties": false
+            ]
+        ]
+    }
+
     // MARK: - System Prompt
-    // This locks in the response format. Be specific and explicit.
 
     private var systemPrompt: String {
         """
         You are a photo curator helping a user clean up their photo library.
 
-        For each image the user provides, evaluate whether it matches their \
-        deletion criteria. Return your analysis as a JSON array with one object \
-        per image, in the exact order the images were provided.
+        For each image the user provides, evaluate whether it matches their
+        cleanup criteria. Be conservative: only mark matches true when the image
+        clearly satisfies the user description.
 
-        Each object must have these fields:
-        - "index": integer, matching the image number provided
-        - "matches": boolean, true if the image matches the deletion criteria
-        - "confidence": number between 0.0 and 1.0 representing how certain you are
-        - "reason": brief string (under 80 characters) explaining your judgment
-
-        Be conservative. Only mark "matches": true if you are clearly confident \
-        the image matches the user's description. When in doubt, mark false.
-
-        Return ONLY the JSON array. No preamble, no markdown code fences, no \
-        explanation outside the JSON. Your response must be valid JSON that \
-        can be parsed directly.
+        Do not identify people by name. Do not add commentary. Use the
+        record_photo_matches tool exactly as requested.
         """
     }
 
@@ -171,38 +312,6 @@ final class AIService {
 
     private func parseResponse(data: Data, photos: [PhotoAsset]) throws -> [ScanResult] {
 
-        // The Anthropic response wraps Claude's text inside a content array.
-        // Structure: { "content": [ { "type": "text", "text": "..." } ] }
-        struct AnthropicResponse: Decodable {
-            struct ContentBlock: Decodable {
-                let type: String
-                let text: String?
-            }
-            let content: [ContentBlock]
-        }
-
-        let response = try JSONDecoder().decode(AnthropicResponse.self, from: data)
-
-        guard let textBlock = response.content.first(where: { $0.type == "text" }),
-              let rawText = textBlock.text else {
-            throw AIServiceError.invalidResponse
-        }
-
-        // Remember: we pre-filled "[" so Claude's response is missing that opener.
-        // Reconstruct the full JSON.
-        var jsonString = "[" + rawText
-
-        // Defensive cleanup: trim anything after the closing bracket if the model
-        // accidentally added trailing text.
-        if let endRange = jsonString.range(of: "]", options: .backwards) {
-            jsonString = String(jsonString[...endRange.upperBound])
-        }
-
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            throw AIServiceError.invalidResponse
-        }
-
-        // Decode into our verdict structs
         struct Verdict: Decodable {
             let index: Int
             let matches: Bool
@@ -210,9 +319,29 @@ final class AIService {
             let reason: String
         }
 
-        let verdicts = try JSONDecoder().decode([Verdict].self, from: jsonData)
+        struct ToolInput: Decodable {
+            let verdicts: [Verdict]
+        }
 
-        // Map verdicts back to photos by index, filtering for matches above threshold
+        struct AnthropicResponse: Decodable {
+            struct ContentBlock: Decodable {
+                let type: String
+                let text: String?
+                let name: String?
+                let input: ToolInput?
+            }
+            let content: [ContentBlock]
+        }
+
+        let response = try JSONDecoder().decode(AnthropicResponse.self, from: data)
+        let toolInput = response.content.first {
+            $0.type == "tool_use" && $0.name == "record_photo_matches"
+        }?.input
+
+        guard let verdicts = toolInput?.verdicts else {
+            throw AIServiceError.invalidResponse
+        }
+
         return verdicts.compactMap { verdict in
             guard verdict.matches,
                   verdict.confidence >= confidenceThreshold,
@@ -238,6 +367,45 @@ final class AIService {
         }
         return jpegData.base64EncodedString()
     }
+
+    private func mapAPIError(statusCode: Int, data: Data) -> AIServiceError {
+        struct AnthropicErrorResponse: Decodable {
+            struct APIError: Decodable {
+                let type: String
+                let message: String
+            }
+
+            let error: APIError
+        }
+
+        let decoded = try? JSONDecoder().decode(AnthropicErrorResponse.self, from: data)
+        let message = decoded?.error.message
+
+        switch statusCode {
+        case 401:
+            return .authenticationFailed
+        case 400:
+            return .apiError(message ?? "Claude rejected the request format.")
+        case 404:
+            return .modelUnavailable(message ?? "Claude could not find that model.")
+        case 429:
+            return .apiError("Claude rate limit reached. Please wait a moment and try again.")
+        default:
+            if let message {
+                return .apiError("Claude API error \(statusCode): \(message)")
+            }
+            return .apiError("Claude API error \(statusCode).")
+        }
+    }
+}
+
+struct AIServiceConnectionCheckResult: Equatable {
+    let model: String
+    let responseID: String
+}
+
+private struct AnthropicMessageResponse: Decodable {
+    let id: String
 }
 
 // MARK: - Errors
@@ -245,13 +413,24 @@ final class AIService {
 enum AIServiceError: Error, LocalizedError {
     case invalidResponse
     case apiError(String)
+    case authenticationFailed
     case imageEncodingFailed
+    case missingAPIKey
+    case modelUnavailable(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "The AI service returned an invalid response."
+        case .invalidResponse:
+            return "Claude returned an unexpected response format."
         case .apiError(let msg): return "API error: \(msg)"
-        case .imageEncodingFailed: return "Could not prepare the image for analysis."
+        case .authenticationFailed:
+            return "Claude authentication failed. Check that your Anthropic API key is valid."
+        case .imageEncodingFailed:
+            return "Could not prepare the image for analysis."
+        case .missingAPIKey:
+            return "Add a valid Anthropic API key before using Smart Search."
+        case .modelUnavailable(let msg):
+            return "Claude model unavailable: \(msg)"
         }
     }
 }
