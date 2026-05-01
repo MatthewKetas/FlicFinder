@@ -18,7 +18,6 @@ final class VisionAnalyzer {
     private let ciContext = CIContext(options: nil)
 
     // MARK: - Tunable Thresholds
-    // These are the knobs you'll adjust based on testing with your own photos.
 
     /// Blur scores below this are considered blurry. Higher = stricter (fewer flags).
     private let blurThreshold: Double = 200.0
@@ -55,8 +54,6 @@ final class VisionAnalyzer {
         var results: [ScanResult] = []
 
         for photo in photos {
-            // Quick win: PHAsset has a screenshot subtype already!
-            // We can skip Vision entirely if Apple already tagged it.
             if photo.phAsset.mediaSubtypes.contains(.photoScreenshot) {
                 results.append(ScanResult(
                     photo: photo,
@@ -93,8 +90,7 @@ final class VisionAnalyzer {
         }
 
         // Step 2: pairwise distance comparison
-        // O(n²) — fine for hundreds, slow for thousands. Real production apps
-        // would use locality-sensitive hashing; for a demo this is plenty.
+        // O(n²) — fine for hundreds, slow for thousands.
         var flaggedIDs: Set<String> = []
         var results: [ScanResult] = []
 

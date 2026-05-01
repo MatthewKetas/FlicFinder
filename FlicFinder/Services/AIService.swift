@@ -174,20 +174,20 @@ final class AIService {
 
     // MARK: - Request Construction
 
-    private func buildConnectionCheckRequestBody(model: String) -> [String: Any] {
+    func buildConnectionCheckRequestBody(model: String) -> [String: Any] {
         [
             "model": model,
-            "max_tokens": 8,
+            "max_tokens": 1,
             "messages": [
                 [
                     "role": "user",
-                    "content": "Reply with OK."
+                    "content": "Reply K."
                 ]
             ]
         ]
     }
 
-    private func buildRequestBody(
+    func buildRequestBody(
         prompt: String,
         imagesBase64: [String],
         model: String
@@ -368,7 +368,7 @@ final class AIService {
         return jpegData.base64EncodedString()
     }
 
-    private func mapAPIError(statusCode: Int, data: Data) -> AIServiceError {
+    func mapAPIError(statusCode: Int, data: Data) -> AIServiceError {
         struct AnthropicErrorResponse: Decodable {
             struct APIError: Decodable {
                 let type: String
