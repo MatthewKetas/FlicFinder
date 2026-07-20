@@ -64,7 +64,11 @@ struct ReviewView: View {
 
             // Delete button
             VStack(spacing: 6) {
-                Text("Frees \(viewModel.formattedSelectedSize)")
+                Text(
+                    viewModel.hasLoadedSizes
+                        ? "Frees \(viewModel.formattedSelectedSize)"
+                        : "Calculating space..."
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button {
@@ -78,9 +82,16 @@ struct ReviewView: View {
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .disabled(viewModel.selectedIDs.isEmpty || viewModel.isDeleting)
+                .disabled(
+                    viewModel.selectedIDs.isEmpty
+                        || viewModel.isDeleting
+                        || viewModel.isLoadingSizes
+                )
             }
             .padding()
+        }
+        .task {
+            await viewModel.loadFileSizes()
         }
     }
 

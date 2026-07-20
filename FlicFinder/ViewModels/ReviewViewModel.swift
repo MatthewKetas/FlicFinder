@@ -19,8 +19,11 @@ final class ReviewViewModel {
     var results: [ScanResult]
     var selectedIDs: Set<UUID> = []
     var isDeleting: Bool = false
+    var isLoadingSizes: Bool = false
+    var hasLoadedSizes: Bool = false
     var didCompleteDeletion: Bool = false
     var deletionError: String?
+    private var fileSizesByPhotoID: [String: Int64] = [:]
 
     // MARK: - Services
     private let library = PhotoLibraryManager.shared
@@ -54,7 +57,9 @@ final class ReviewViewModel {
     }
 
     var totalSelectedSize: Int64 {
-        selectedResults.reduce(0) { $0 + $1.photo.fileSize }
+        selectedResults.reduce(0) {
+            $0 + (fileSizesByPhotoID[$1.photo.id] ?? 0)
+        }
     }
 
     var formattedSelectedSize: String {
@@ -66,10 +71,23 @@ final class ReviewViewModel {
 
     // MARK: - Deletion
 
+    func loadFileSizes() async {
+        guard !hasLoadedSizes else { return }
+        isLoadingSizes = true
+        defer { isLoadingSizes = false }
+
+        fileSizesByPhotoID = await library.fetchFileSizes(
+            for: results.map(\.photo)
+        )
+        hasLoadedSizes = true
+    }
+
     /// Returns the bytes freed and deleted IDs so the caller can update HomeViewModel.
     func confirmDeletion() async -> (bytesFreed: Int64, deletedPhotoIDs: Set<String>)? {
         let toDelete = selectedResults.map { $0.photo }
         guard !toDelete.isEmpty else { return nil }
+
+        await loadFileSizes()
 
         isDeleting = true
         defer { isDeleting = false }

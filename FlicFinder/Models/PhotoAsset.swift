@@ -15,7 +15,6 @@ struct PhotoAsset: Identifiable, Hashable {
     let id: String
     let phAsset: PHAsset
     let creationDate: Date?
-    let fileSize: Int64
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)

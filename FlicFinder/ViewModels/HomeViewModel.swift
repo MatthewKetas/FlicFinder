@@ -9,12 +9,11 @@ import PhotosUI
 @MainActor
 final class HomeViewModel {
 
-    // MARK: - Library Stats
-    var totalPhotos: Int = 0          // total count in user's library (still tracked internally)
-    var totalLibrarySize: Int64 = 0
+    // MARK: - Stats
     var spaceSaved: Int64 = 0
     var photosCleaned: Int = 0
     var isLoading: Bool = false
+    var isLoadingSelection: Bool = false
     var permissionDenied: Bool = false
     var selectionErrorMessage: String?
 
@@ -47,14 +46,7 @@ final class HomeViewModel {
             permissionDenied = true
             return
         }
-        await refreshStats()
         await restorePersistedSelection()
-    }
-
-    func refreshStats() async {
-        let assets = await library.fetchAllPhotos()
-        totalPhotos = assets.count
-        totalLibrarySize = assets.reduce(0) { $0 + $1.fileSize }
     }
 
     func recordDeletion(freedBytes: Int64, deletedPhotoIDs: Set<String>) {
@@ -67,8 +59,6 @@ final class HomeViewModel {
         // Some selected photos may have just been deleted — drop them.
         selectedPhotos.removeAll { deletedPhotoIDs.contains($0.id) }
         persistSelection()
-
-        Task { await refreshStats() }
     }
 
     // MARK: - Selection Management
@@ -81,6 +71,9 @@ final class HomeViewModel {
 
     @discardableResult
     func updateSelection(fromPickerItems items: [PhotosPickerItem]) async -> [PhotoAsset] {
+        isLoadingSelection = true
+        defer { isLoadingSelection = false }
+
         let photos = await convertPickerItems(items)
         selectedPhotos = photos
 
@@ -146,9 +139,5 @@ final class HomeViewModel {
 
     var formattedSpaceSaved: String {
         ByteCountFormatter.string(fromByteCount: spaceSaved, countStyle: .file)
-    }
-
-    var formattedTotalSize: String {
-        ByteCountFormatter.string(fromByteCount: totalLibrarySize, countStyle: .file)
     }
 }
