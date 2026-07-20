@@ -33,6 +33,18 @@ struct ContentView: View {
                 .padding(.bottom, 20)
             }
             .background(Color(.systemGroupedBackground))
+            .overlay {
+                if viewModel.isLoading || viewModel.isLoadingSelection {
+                    ProgressView(
+                        viewModel.isLoadingSelection
+                            ? "Preparing selected photos..."
+                            : "Loading photo library..."
+                    )
+                    .padding()
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
             .navigationTitle("FlicFinder")
             .task {
                 await viewModel.onAppear()

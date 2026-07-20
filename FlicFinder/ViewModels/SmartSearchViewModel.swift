@@ -32,11 +32,16 @@ final class SmartSearchViewModel {
     func submit(selectedPhotos: [PhotoAsset]) async {
         guard !prompt.isEmpty else { return }
 
+        isSearching = true
+        errorMessage = nil
+        defer { isSearching = false }
+
         // No selection = scan a default batch of recent photos.
         let photosToAnalyze: [PhotoAsset]
         if selectedPhotos.isEmpty {
-            let recent = await library.fetchAllPhotos()
-            photosToAnalyze = Array(recent.prefix(smartSearchPhotoSelectionLimit))
+            photosToAnalyze = await library.fetchRecentPhotos(
+                limit: smartSearchPhotoSelectionLimit
+            )
         } else {
             photosToAnalyze = selectedPhotos
         }
@@ -46,10 +51,6 @@ final class SmartSearchViewModel {
             photoLimitPromptMessage = "Smart Search can analyze up to \(smartSearchPhotoSelectionLimit) photos at a time. Please select only \(smartSearchPhotoSelectionLimit) photos."
             return
         }
-
-        isSearching = true
-        errorMessage = nil
-        defer { isSearching = false }
 
         do {
             results = try await ai.analyzePhotos(photosToAnalyze, prompt: prompt)

@@ -11,8 +11,7 @@ import Foundation
 import Photos
 import UIKit
 
-@MainActor
-final class PhotoLibraryManager {
+nonisolated final class PhotoLibraryManager {
 
     static let shared = PhotoLibraryManager()
     private init() {}
@@ -30,18 +29,17 @@ final class PhotoLibraryManager {
 
     // MARK: - Fetching
 
-    func fetchAllPhotos() async -> [PhotoAsset] {
-        let fetchOptions = PHFetchOptions()
-        fetchOptions.sortDescriptors = [
-            NSSortDescriptor(key: "creationDate", ascending: false)
-        ]
-        fetchOptions.predicate = NSPredicate(
-            format: "mediaType == %d",
-            PHAssetMediaType.image.rawValue
-        )
+    @concurrent func fetchAllPhotos() async -> [PhotoAsset] {
+        photos(from: PHAsset.fetchAssets(with: photoFetchOptions()))
+    }
 
-        let result = PHAsset.fetchAssets(with: fetchOptions)
+    @concurrent func fetchRecentPhotos(limit: Int) async -> [PhotoAsset] {
+        photos(from: PHAsset.fetchAssets(with: photoFetchOptions(limit: limit)))
+    }
+
+    private func photos(from result: PHFetchResult<PHAsset>) -> [PhotoAsset] {
         var assets: [PhotoAsset] = []
+        assets.reserveCapacity(result.count)
 
         result.enumerateObjects { asset, _, _ in
             assets.append(self.photoAsset(from: asset))
@@ -50,7 +48,7 @@ final class PhotoLibraryManager {
         return assets
     }
 
-    func fetchPhotos(withLocalIdentifiers identifiers: [String]) async -> [PhotoAsset] {
+    @concurrent func fetchPhotos(withLocalIdentifiers identifiers: [String]) async -> [PhotoAsset] {
         guard !identifiers.isEmpty else { return [] }
 
         let result = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
@@ -61,6 +59,19 @@ final class PhotoLibraryManager {
         }
 
         return identifiers.compactMap { assetsByID[$0] }
+    }
+
+    private func photoFetchOptions(limit: Int = 0) -> PHFetchOptions {
+        let options = PHFetchOptions()
+        options.sortDescriptors = [
+            NSSortDescriptor(key: "creationDate", ascending: false)
+        ]
+        options.predicate = NSPredicate(
+            format: "mediaType == %d",
+            PHAssetMediaType.image.rawValue
+        )
+        options.fetchLimit = limit
+        return options
     }
 
     // MARK: - Thumbnail Loading
@@ -86,25 +97,6 @@ final class PhotoLibraryManager {
         }
     }
 
-    /// Loads a full-resolution image. Used by AI analysis where we need detail.
-    func loadFullImage(for asset: PHAsset) async -> UIImage? {
-        await withCheckedContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.deliveryMode = .highQualityFormat
-            options.isNetworkAccessAllowed = true
-            options.isSynchronous = false
-
-            PHImageManager.default().requestImage(
-                for: asset,
-                targetSize: PHImageManagerMaximumSize,
-                contentMode: .default,
-                options: options
-            ) { image, _ in
-                continuation.resume(returning: image)
-            }
-        }
-    }
-
     // MARK: - Deletion
 
     @discardableResult
@@ -118,20 +110,21 @@ final class PhotoLibraryManager {
 
     // MARK: - File Size Calculation
 
-    private func fileSize(for asset: PHAsset) -> Int64 {
-        let resources = PHAssetResource.assetResources(for: asset)
-        return resources.reduce(Int64(0)) { total, resource in
-            let size = resource.value(forKey: "fileSize") as? Int64 ?? 0
-            return total + size
-        }
+    @concurrent func fetchFileSizes(for assets: [PhotoAsset]) async -> [String: Int64] {
+        Dictionary(uniqueKeysWithValues: assets.map { photo in
+            let bytes = PHAssetResource.assetResources(for: photo.phAsset)
+                .reduce(Int64(0)) { total, resource in
+                    total + (resource.value(forKey: "fileSize") as? Int64 ?? 0)
+                }
+            return (photo.id, bytes)
+        })
     }
 
     private func photoAsset(from asset: PHAsset) -> PhotoAsset {
         PhotoAsset(
             id: asset.localIdentifier,
             phAsset: asset,
-            creationDate: asset.creationDate,
-            fileSize: fileSize(for: asset)
+            creationDate: asset.creationDate
         )
     }
 }

@@ -7,8 +7,7 @@ import UIKit
 import CoreImage
 import Photos
 
-@MainActor
-final class VisionAnalyzer {
+nonisolated final class VisionAnalyzer {
 
     static let shared = VisionAnalyzer()
     private init() {}
@@ -31,7 +30,7 @@ final class VisionAnalyzer {
 
     // MARK: - Public API
 
-    func detectBlurry(in photos: [PhotoAsset]) async -> [ScanResult] {
+    @concurrent func detectBlurry(in photos: [PhotoAsset]) async -> [ScanResult] {
         var results: [ScanResult] = []
 
         for photo in photos {
@@ -50,7 +49,7 @@ final class VisionAnalyzer {
         return results
     }
 
-    func detectScreenshots(in photos: [PhotoAsset]) async -> [ScanResult] {
+    @concurrent func detectScreenshots(in photos: [PhotoAsset]) async -> [ScanResult] {
         var results: [ScanResult] = []
 
         for photo in photos {
@@ -80,7 +79,7 @@ final class VisionAnalyzer {
         return results
     }
 
-    func findDuplicates(in photos: [PhotoAsset]) async -> [ScanResult] {
+    @concurrent func findDuplicates(in photos: [PhotoAsset]) async -> [ScanResult] {
         // Step 1: compute a feature print for each photo
         var prints: [(photo: PhotoAsset, print: VNFeaturePrintObservation)] = []
         for photo in photos {
@@ -124,7 +123,7 @@ final class VisionAnalyzer {
         return results
     }
 
-    func findOldPhotos(
+    @concurrent func findOldPhotos(
         in photos: [PhotoAsset],
         olderThan years: Int = 3
     ) async -> [ScanResult] {
@@ -146,7 +145,7 @@ final class VisionAnalyzer {
             }
     }
 
-    func analyze(
+    @concurrent func analyze(
         photos: [PhotoAsset],
         action: QuickAction
     ) async -> [ScanResult] {
